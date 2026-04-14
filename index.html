@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Marketing Arcode</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body data-page="home">
+    <div class="site-shell">
+      <aside class="sidebar">
+        <div class="brand-lockup">
+          <span class="brand-pill">MARKETING Arcode</span>
+          <h1>Central de Captações</h1>
+          <p>Calendário, agenda operacional e notas rápidas em um só lugar.</p>
+        </div>
+
+        <nav class="nav-links">
+          <a class="nav-link is-active" href="./index.html">Visão Geral</a>
+          <a class="nav-link" href="./calendario.html">Calendário</a>
+          <a class="nav-link" href="./agenda.html">Agenda</a>
+          <a class="nav-link" href="./anotacoes.html">Anotações</a>
+        </nav>
+
+        <section class="panel compact-panel">
+          <span class="eyebrow">Fonte principal</span>
+          <strong id="sourceStatus">Planilha Controle de O.S.</strong>
+          <p class="muted-text">Leitura automática do Google Sheets.</p>
+        </section>
+      </aside>
+
+      <main class="page-content">
+        <header class="page-header">
+          <div>
+            <span class="eyebrow">Visão Geral</span>
+            <h2>Operação do time</h2>
+          </div>
+        </header>
+
+        <section class="stats-grid">
+          <article class="panel stat-card">
+            <span class="panel-label">Entregas do mês</span>
+            <strong id="statMonthCount">0</strong>
+          </article>
+          <article class="panel stat-card">
+            <span class="panel-label">Próximas entregas</span>
+            <strong id="statUpcomingCount">0</strong>
+          </article>
+          <article class="panel stat-card">
+            <span class="panel-label">Segmentos ativos</span>
+            <strong id="statSegments">0</strong>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <article class="panel">
+            <div class="section-head">
+              <h3>Próximas entregas</h3>
+            </div>
+            <div id="homeUpcomingList" class="event-list"></div>
+          </article>
+
+          <article class="panel">
+            <div class="section-head">
+              <h3>Notas recentes</h3>
+            </div>
+            <div id="recentNotesList" class="event-list"></div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <script src="./assets/config.js"></script>
+    <script src="./assets/data.js"></script>
+    <script src="./assets/notes.js"></script>
+    <script src="./assets/ui.js"></script>
+  </body>
+</html>
