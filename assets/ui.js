@@ -65,7 +65,10 @@
   function renderCalendarPage() {
     document.getElementById("currentMonthLabel").textContent = formatMonthLabel(state.currentMonth);
     document.getElementById("calendarUpcomingList").innerHTML = renderEventCards(getUpcomingEvents().slice(0, 5), "Sem próximas entregas.");
-    document.getElementById("mobileAgendaList").innerHTML = renderGroupedMonthAgenda();
+    const mobileAgendaList = document.getElementById("mobileAgendaList");
+    if (mobileAgendaList) {
+      mobileAgendaList.innerHTML = renderGroupedMonthAgenda();
+    }
     document.getElementById("selectedDateLabel").textContent = formatLongDateLabel(state.selectedDate);
     document.getElementById("selectedDayEvents").innerHTML = renderEventCards(
       state.events.filter((event) => event.dateKey === state.selectedDate),

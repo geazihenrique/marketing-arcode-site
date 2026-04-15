@@ -355,11 +355,12 @@ textarea {
   }
 
   .desktop-calendar-panel {
-    display: none;
+    display: block;
+    padding: 12px;
   }
 
   .mobile-agenda-panel {
-    display: block;
+    display: none;
   }
 
   .details-panel {
@@ -380,6 +381,40 @@ textarea {
   .agenda-group,
   .mobile-day-group {
     padding: 12px;
+  }
+
+  .weekdays,
+  .calendar-grid {
+    gap: 4px;
+  }
+
+  .weekday {
+    font-size: 0.62rem;
+    padding: 2px 0;
+  }
+
+  .day-cell {
+    min-height: 86px;
+    padding: 6px;
+    border-radius: 14px;
+    gap: 4px;
+  }
+
+  .day-number {
+    font-size: 0.86rem;
+    line-height: 1;
+  }
+
+  .day-count {
+    font-size: 0.58rem;
+    line-height: 1.1;
+  }
+
+  .event-chip,
+  .expand-btn {
+    font-size: 0.56rem;
+    padding: 4px 5px;
+    border-radius: 9px;
   }
 
   .mobile-day-cards {
