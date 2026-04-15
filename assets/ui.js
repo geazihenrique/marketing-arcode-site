@@ -76,8 +76,15 @@
   }
 
   function renderAgendaPage() {
-    const groups = groupEventsByDate(state.events);
+    const groups = groupEventsByDate(getUpcomingEvents());
     const sortedDates = Array.from(groups.keys()).sort();
+
+    if (sortedDates.length === 0) {
+      document.getElementById("agendaGroupedList").innerHTML =
+        '<p class="empty-state">Nenhuma próxima entrega encontrada.</p>';
+      return;
+    }
+
     document.getElementById("agendaGroupedList").innerHTML = sortedDates
       .map((dateKey) => {
         const dayEvents = groups.get(dateKey) || [];
@@ -186,6 +193,11 @@
               ${event.categories.length ? `<span>${escapeHtml(event.categories.join(" • "))}</span>` : ""}
             </div>
             ${event.owner ? `<div class="status">${escapeHtml(event.owner)}</div>` : ""}
+            ${
+              event.captureOwner
+                ? `<p class="detail-line"><span class="detail-label">Captação:</span> ${escapeHtml(event.captureOwner)}</p>`
+                : ""
+            }
             ${event.producer ? `<p class="detail-line"><span class="detail-label">Produtor:</span> ${escapeHtml(event.producer)}</p>` : ""}
             ${event.notes ? `<p class="detail-line"><span class="detail-label">Observações:</span> ${escapeHtml(event.notes)}</p>` : ""}
           </article>

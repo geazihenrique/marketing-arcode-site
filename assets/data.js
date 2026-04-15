@@ -21,6 +21,7 @@
     const segmentText = getByColumn(row, config.columns.segment);
     const producer = getByColumn(row, config.columns.producer);
     const notes = getByColumn(row, config.columns.notes);
+    const captureOwner = getByColumn(row, config.columns.captureOwner);
 
     if (!clientName || !deliveryRaw) {
       return null;
@@ -44,6 +45,7 @@
       clientName,
       producer,
       notes,
+      captureOwner,
       categories,
       dateObject,
       dateKey: formatDateKey(dateObject),

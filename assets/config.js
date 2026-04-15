@@ -9,6 +9,7 @@ window.APP_CONFIG = {
     deliveryDate: "D",
     segment: "F",
     producer: "I",
-    notes: "K"
+    notes: "K",
+    captureOwner: "N"
   }
 };
