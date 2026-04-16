@@ -17,16 +17,20 @@
 
     const page = document.body.dataset.page;
 
+    bindSearchForm();
+
     if (page === "home") {
       renderHome();
     }
 
     if (page === "calendar") {
       initCalendarPage();
+      initializeSearchPanel();
     }
 
     if (page === "agenda") {
       renderAgendaPage();
+      initializeSearchPanel();
     }
   });
 
@@ -60,6 +64,7 @@
     document.getElementById("statSegments").textContent = String(getUniqueSegments().length);
     document.getElementById("homeUpcomingList").innerHTML = renderEventCards(getUpcomingEvents().slice(0, 5), "Sem próximas entregas.");
     document.getElementById("segmentSummaryList").innerHTML = renderSegmentSummary();
+    initializeSearchPanel();
   }
 
   function renderCalendarPage() {
@@ -203,6 +208,71 @@
             }
             ${event.producer ? `<p class="detail-line"><span class="detail-label">Produtor:</span> ${escapeHtml(event.producer)}</p>` : ""}
             ${event.notes ? `<p class="detail-line"><span class="detail-label">Observações:</span> ${escapeHtml(event.notes)}</p>` : ""}
+          </article>
+        `
+      )
+      .join("");
+  }
+
+  function bindSearchForm() {
+    const form = document.getElementById("searchForm");
+    const input = document.getElementById("searchInput");
+
+    if (!form || !input) {
+      return;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const query = input.value.trim();
+      const resultsNode = document.getElementById("searchResults");
+
+      if (!query) {
+        resultsNode.innerHTML =
+          '<p class="empty-state">Digite um número de O.S., nome do cliente ou palavra-chave.</p>';
+        return;
+      }
+
+      resultsNode.innerHTML = '<p class="empty-state">Buscando...</p>';
+
+      try {
+        const records = await window.DataApi.searchRecords(query);
+        resultsNode.innerHTML = renderSearchResults(records);
+      } catch (_error) {
+        resultsNode.innerHTML =
+          '<p class="empty-state">Nao foi possivel concluir a busca agora.</p>';
+      }
+    });
+  }
+
+  function initializeSearchPanel() {
+    const resultsNode = document.getElementById("searchResults");
+
+    if (!resultsNode) {
+      return;
+    }
+
+    if (!resultsNode.innerHTML.trim()) {
+      resultsNode.innerHTML =
+        '<p class="empty-state">Digite um número de O.S., nome do cliente ou palavra-chave.</p>';
+    }
+  }
+
+  function renderSearchResults(records) {
+    if (records.length === 0) {
+      return '<p class="empty-state">Nenhum resultado encontrado.</p>';
+    }
+
+    return records
+      .map(
+        (record) => `
+          <article class="event-card search-card">
+            <h3>O.S. ${escapeHtml(record.orderNumber)} • ${escapeHtml(record.clientName)}</h3>
+            <div class="event-meta">
+              <span>Entrega: ${escapeHtml(record.deliveryDate)}</span>
+            </div>
+            <p class="detail-line"><span class="detail-label">Cliente:</span> ${escapeHtml(record.clientName)}</p>
+            <p class="detail-line"><span class="detail-label">Descrição:</span> ${escapeHtml(record.sheetDescription || "Sem descrição")}</p>
           </article>
         `
       )

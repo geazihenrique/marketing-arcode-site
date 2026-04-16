@@ -7,6 +7,7 @@ window.APP_CONFIG = {
     orderNumber: "A",
     clientName: "B",
     deliveryDate: "D",
+    description: "E",
     segment: "F",
     producer: "I",
     notes: "K",

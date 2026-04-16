@@ -1,23 +1,51 @@
 (function () {
   const config = window.APP_CONFIG;
+  let rowsCachePromise = null;
 
   async function loadEvents() {
-    const response = await fetch(config.publishedCsvUrl);
-    if (!response.ok) {
-      throw new Error("Nao foi possivel carregar a planilha.");
-    }
-
-    const csvText = await response.text();
-    return parseCsv(csvText)
+    const rows = await loadRows();
+    return rows
       .map(mapRowToEvent)
       .filter(Boolean)
       .sort((a, b) => a.dateObject - b.dateObject);
+  }
+
+  async function searchRecords(query) {
+    const normalizedQuery = normalizeText(query).trim();
+
+    if (!normalizedQuery) {
+      return [];
+    }
+
+    const rows = await loadRows();
+
+    return rows
+      .map(mapRowToSearchRecord)
+      .filter(Boolean)
+      .filter((record) => matchesSearch(record, normalizedQuery))
+      .sort((a, b) => a.dateObject - b.dateObject);
+  }
+
+  async function loadRows() {
+    if (!rowsCachePromise) {
+      rowsCachePromise = fetch(config.publishedCsvUrl)
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Nao foi possivel carregar a planilha.");
+          }
+          return response.text();
+        })
+        .then((csvText) => parseCsv(csvText));
+    }
+
+    return rowsCachePromise;
   }
 
   function mapRowToEvent(row) {
     const orderNumber = getByColumn(row, config.columns.orderNumber);
     const clientName = getByColumn(row, config.columns.clientName);
     const deliveryRaw = getByColumn(row, config.columns.deliveryDate);
+    const sheetDescription = getByColumn(row, config.columns.description);
     const segmentText = getByColumn(row, config.columns.segment);
     const producer = getByColumn(row, config.columns.producer);
     const notes = getByColumn(row, config.columns.notes);
@@ -46,14 +74,53 @@
       producer,
       notes,
       captureOwner,
+      sheetDescription,
       categories,
       dateObject,
       dateKey: formatDateKey(dateObject),
       title: `O.S. ${orderNumber} • ${clientName}`,
       owner: clientName ? `Cliente: ${clientName}` : "",
-      description: `Entrega prevista para ${formatShortDate(dateObject)}.`,
+      description: sheetDescription || `Entrega prevista para ${formatShortDate(dateObject)}.`,
       time: "Entrega"
     };
+  }
+
+  function mapRowToSearchRecord(row) {
+    const orderNumber = getByColumn(row, config.columns.orderNumber);
+    const clientName = getByColumn(row, config.columns.clientName);
+    const deliveryRaw = getByColumn(row, config.columns.deliveryDate);
+    const sheetDescription = getByColumn(row, config.columns.description);
+
+    if (!orderNumber || !clientName || !deliveryRaw) {
+      return null;
+    }
+
+    const dateObject = parseDateValue(deliveryRaw);
+
+    if (!dateObject) {
+      return null;
+    }
+
+    return {
+      orderNumber,
+      clientName,
+      sheetDescription,
+      deliveryDate: formatShortDate(dateObject),
+      dateObject,
+      title: `O.S. ${orderNumber} • ${clientName}`,
+      searchText: normalizeText(`${orderNumber} ${clientName} ${sheetDescription}`)
+    };
+  }
+
+  function matchesSearch(record, normalizedQuery) {
+    const queryDigits = normalizedQuery.replace(/\D/g, "");
+    const orderDigits = normalizeText(record.orderNumber).replace(/\D/g, "");
+
+    if (queryDigits && orderDigits === queryDigits) {
+      return true;
+    }
+
+    return record.searchText.includes(normalizedQuery);
   }
 
   function getByColumn(row, letter) {
@@ -153,6 +220,7 @@
   }
 
   window.DataApi = {
-    loadEvents
+    loadEvents,
+    searchRecords
   };
 })();
