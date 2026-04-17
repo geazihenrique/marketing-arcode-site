@@ -64,6 +64,7 @@
     document.getElementById("statSegments").textContent = String(getUniqueSegments().length);
     document.getElementById("homeUpcomingList").innerHTML = renderEventCards(getUpcomingEvents().slice(0, 5), "Sem próximas entregas.");
     document.getElementById("segmentSummaryList").innerHTML = renderSegmentSummary();
+    renderEditorialReminders();
     initializeSearchPanel();
   }
 
@@ -303,6 +304,88 @@
         `
       )
       .join("");
+  }
+
+  function renderEditorialReminders() {
+    const today = new Date();
+    const todayReminder = getTodayReminder(today);
+    const nextReminder = getNextPostReminder(today);
+
+    document.getElementById("todayReminderTitle").textContent = todayReminder.title;
+    document.getElementById("todayReminderText").textContent = todayReminder.text;
+    document.getElementById("storiesReminderTitle").textContent = "Stories de hoje";
+    document.getElementById("storiesReminderText").textContent = getStoriesReminder(today);
+    document.getElementById("nextReminderTitle").textContent = nextReminder.title;
+    document.getElementById("nextReminderText").textContent = nextReminder.text;
+  }
+
+  function getTodayReminder(date) {
+    const day = date.getDay();
+
+    if (day === 2) {
+      return {
+        title: "Dia de postar Carrossel",
+        text: "Publicar o carrossel sobre o projeto que será postado na sexta."
+      };
+    }
+
+    if (day === 5) {
+      return {
+        title: "Dia de postar Reel de bastidor",
+        text: "Publicar o reel com bastidores e reforçar a presença da operação."
+      };
+    }
+
+    return {
+      title: "Dia de movimentar os Stories",
+      text: "Sem post fixo no feed hoje. Priorize bastidores, rotina e aquecimento da próxima pauta."
+    };
+  }
+
+  function getStoriesReminder(date) {
+    return `Publicar de 3 a 6 stories hoje. Lembrete da semana: ${getWeeklyStoryAction(date.getDay())}.`;
+  }
+
+  function getWeeklyStoryAction(day) {
+    if (day <= 2) {
+      return "incluir 1 story com enquete";
+    }
+
+    if (day <= 4) {
+      return "incluir 1 story com caixa de perguntas";
+    }
+
+    return "incluir 1 story com prova social";
+  }
+
+  function getNextPostReminder(date) {
+    const day = date.getDay();
+
+    if (day < 2) {
+      return {
+        title: "Próxima postagem: terça",
+        text: "A próxima postagem será um Carrossel na terça-feira."
+      };
+    }
+
+    if (day === 2) {
+      return {
+        title: "Próxima postagem: sexta",
+        text: "Depois do carrossel de hoje, a próxima postagem será um Reel na sexta-feira."
+      };
+    }
+
+    if (day < 5) {
+      return {
+        title: "Próxima postagem: sexta",
+        text: "A próxima postagem será um Reel de bastidor na sexta-feira."
+      };
+    }
+
+    return {
+      title: "Próxima postagem: terça",
+      text: "Depois do reel, a próxima postagem será um Carrossel na terça-feira."
+    };
   }
 
   function getMonthEvents() {
