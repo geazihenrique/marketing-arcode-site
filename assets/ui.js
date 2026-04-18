@@ -80,7 +80,6 @@
         "queueGroups",
         `<section class="panel queue-group"><div class="event-list">${renderSkeletonCards(4)}</div></section>`
       );
-      fillNode("searchResults", renderSkeletonCards(2));
     }
 
     if (page === "calendar") {
@@ -90,12 +89,10 @@
         "calendarGrid",
         `<div class="empty-state">Carregando calendário...</div>`
       );
-      fillNode("searchResults", renderSkeletonCards(2));
     }
 
     if (page === "agenda") {
       fillNode("agendaGroupedList", renderSkeletonCards(4));
-      fillNode("searchResults", renderSkeletonCards(2));
     }
   }
 
@@ -535,9 +532,7 @@
       return;
     }
 
-    if (!resultsNode.innerHTML.trim()) {
-      resultsNode.innerHTML = '<p class="empty-state">Digite um número de O.S., nome do cliente ou palavra-chave.</p>';
-    }
+    resultsNode.innerHTML = "";
   }
 
   function renderSearchResults(records) {
