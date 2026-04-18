@@ -4,8 +4,10 @@
 
   const state = {
     queueItems: [],
+    calendarItems: [],
     queueFilter: "Todos",
     queueError: null,
+    calendarError: null,
     currentMonth: startOfMonth(new Date()),
     selectedDate: formatDateKey(new Date())
   };
@@ -15,12 +17,12 @@
     renderLoadingState(page);
     bindSearchForm();
 
-    try {
-      state.queueItems = await window.DataApi.loadQueueItems();
-      setSourceStatus("Planilha MKT conectada");
-    } catch (_error) {
-      state.queueError = "Não foi possível carregar a aba MKT agora.";
-      setSourceStatus("Erro ao carregar planilha");
+    if (page === "calendar") {
+      await loadCalendarSource();
+      setSourceStatus(state.calendarError ? "Erro ao carregar planilha" : "Planilha VENDAS OS conectada");
+    } else {
+      await loadQueueSource();
+      setSourceStatus(state.queueError ? "Erro ao carregar planilha" : "Planilha MKT conectada");
     }
 
     if (page === "home") {
@@ -40,6 +42,26 @@
     }
   });
 
+  async function loadQueueSource() {
+    try {
+      state.queueItems = await window.DataApi.loadQueueItems();
+      state.queueError = null;
+    } catch (_error) {
+      state.queueItems = [];
+      state.queueError = "Não foi possível carregar a aba MKT agora.";
+    }
+  }
+
+  async function loadCalendarSource() {
+    try {
+      state.calendarItems = await window.DataApi.loadCalendarItems();
+      state.calendarError = null;
+    } catch (_error) {
+      state.calendarItems = [];
+      state.calendarError = "Não foi possível carregar a aba VENDAS OS agora.";
+    }
+  }
+
   function renderLoadingState(page) {
     if (page === "home") {
       setText("statOverdueCount", "...");
@@ -58,15 +80,22 @@
         "queueGroups",
         `<section class="panel queue-group"><div class="event-list">${renderSkeletonCards(4)}</div></section>`
       );
+      fillNode("searchResults", renderSkeletonCards(2));
     }
 
     if (page === "calendar") {
       fillNode("calendarUpcomingList", renderSkeletonCards(2));
       fillNode("selectedDayEvents", renderSkeletonCards(2));
+      fillNode(
+        "calendarGrid",
+        `<div class="empty-state">Carregando calendário...</div>`
+      );
+      fillNode("searchResults", renderSkeletonCards(2));
     }
 
     if (page === "agenda") {
       fillNode("agendaGroupedList", renderSkeletonCards(4));
+      fillNode("searchResults", renderSkeletonCards(2));
     }
   }
 
@@ -94,7 +123,7 @@
       return;
     }
 
-    const operational = state.queueItems.filter((item) => !item.isPublished);
+    const operational = getOperationalQueueItems();
     const now = new Date();
     const today = startOfDay(now);
     const tomorrow = addDays(today, 1);
@@ -106,9 +135,7 @@
     const scheduledNext = operational.filter(
       (item) => item.statusNormalized === "AGENDADO" && item.hasDueDate && item.dueDateTime >= tomorrow
     );
-    const ideasNoDue = operational.filter(
-      (item) => item.statusNormalized === "IDEIA" && !item.hasDueDate
-    );
+    const ideasNoDue = operational.filter((item) => item.statusNormalized === "IDEIA" && !item.hasDueDate);
 
     setText("statOverdueCount", String(overdue.length));
     setText("statDueTodayCount", String(dueToday.length));
@@ -124,6 +151,8 @@
   }
 
   function renderQueuePage() {
+    initializeSearchPanel();
+
     const countersNode = document.getElementById("queueCounters");
     const filtersNode = document.getElementById("queueFilters");
     const groupsNode = document.getElementById("queueGroups");
@@ -141,7 +170,7 @@
 
     const now = new Date();
     const today = startOfDay(now);
-    const operational = state.queueItems.filter((item) => !item.isPublished);
+    const operational = getOperationalQueueItems();
 
     const counters = {
       "Em edição": operational.filter((item) => item.statusNormalized === "EM EDICAO").length,
@@ -176,12 +205,10 @@
       });
     });
 
-    const filtered = applyQueueFilter(operational, state.queueFilter, now, today);
+    const filtered = applyQueueFilter(operational, state.queueFilter, today);
     const groups = {
       Atrasados: filtered.filter((item) => item.hasDueDate && item.dueDateTime < now),
-      Hoje: filtered.filter(
-        (item) => item.hasDueDate && isSameDate(item.dueDateTime, today) && item.dueDateTime >= now
-      ),
+      Hoje: filtered.filter((item) => item.hasDueDate && isSameDate(item.dueDateTime, today)),
       Próximos: filtered.filter((item) => item.hasDueDate && item.dueDateTime > endOfDay(today)),
       "Sem prazo": filtered.filter((item) => !item.hasDueDate)
     };
@@ -192,7 +219,7 @@
           <section class="panel queue-group">
             <div class="section-head">
               <h3>${title}</h3>
-              <span class="muted-text">${items.length} item(s)</span>
+              <span class="muted-text">${items.length} ${items.length === 1 ? "item" : "itens"}</span>
             </div>
             <div class="event-list">${renderQueueCards(items, `Nenhum item em ${title.toLowerCase()}.`)}</div>
           </section>
@@ -202,12 +229,12 @@
   }
 
   function initCalendarPage() {
+    initializeSearchPanel();
+
     const weekdayHeader = document.getElementById("weekdayHeader");
     const prevMonthBtn = document.getElementById("prevMonthBtn");
     const nextMonthBtn = document.getElementById("nextMonthBtn");
     const todayBtn = document.getElementById("todayBtn");
-
-    initializeSearchPanel();
 
     if (!weekdayHeader || !prevMonthBtn || !nextMonthBtn || !todayBtn) {
       return;
@@ -246,23 +273,22 @@
       return;
     }
 
-    if (state.queueError) {
-      renderErrorState(upcomingNode, state.queueError);
-      renderErrorState(selectedDayNode, state.queueError);
+    if (state.calendarError) {
+      renderErrorState(upcomingNode, state.calendarError);
+      renderErrorState(selectedDayNode, state.calendarError);
       gridNode.innerHTML = "";
       return;
     }
 
-    const operational = state.queueItems.filter((item) => !item.isPublished && item.hasDueDate);
     monthLabel.textContent = formatMonthLabel(state.currentMonth);
-    upcomingNode.innerHTML = renderQueueCards(getUpcomingQueueItems().slice(0, 5), "Sem próximas entregas.");
-    gridNode.innerHTML = renderCalendarGrid(operational, state.currentMonth, state.selectedDate);
+    upcomingNode.innerHTML = renderCalendarDetailCards(getUpcomingCalendarItems().slice(0, 5), "Sem próximas entregas.");
+    gridNode.innerHTML = renderCalendarGrid(state.calendarItems, state.currentMonth, state.selectedDate);
     bindCalendarInteractions();
 
     selectedDateLabel.textContent = formatLongDateLabel(state.selectedDate);
-    selectedDayNode.innerHTML = renderQueueCards(
-      operational.filter((item) => formatDateKey(item.dueDateTime) === state.selectedDate),
-      "Nenhum item para esta data."
+    selectedDayNode.innerHTML = renderCalendarDetailCards(
+      state.calendarItems.filter((item) => item.dateKey === state.selectedDate),
+      "Nenhuma entrega para esta data."
     );
   }
 
@@ -295,7 +321,7 @@
           <article class="agenda-group">
             <div class="section-head">
               <h3>${formatLongDateLabel(key)}</h3>
-              <span class="muted-text">${items.length} entrega(s)</span>
+              <span class="muted-text">${items.length} ${items.length === 1 ? "entrega" : "entregas"}</span>
             </div>
             ${renderQueueCards(items, "")}
           </article>
@@ -304,15 +330,13 @@
       .join("");
   }
 
-  function applyQueueFilter(items, filterName, now, today) {
+  function applyQueueFilter(items, filterName, today) {
     if (filterName === "Todos") {
       return items;
     }
 
     if (filterName === "Edicao") {
-      return items.filter(
-        (item) => item.statusNormalized === "EM EDICAO" || item.statusNormalized === "FILA"
-      );
+      return items.filter((item) => item.statusNormalized === "EM EDICAO" || item.statusNormalized === "FILA");
     }
 
     if (filterName === "Producao") {
@@ -333,9 +357,7 @@
 
     if (filterName === "Semana") {
       const end = endOfDay(addDays(today, 6));
-      return items.filter(
-        (item) => item.hasDueDate && item.dueDateTime >= startOfDay(today) && item.dueDateTime <= end
-      );
+      return items.filter((item) => item.hasDueDate && item.dueDateTime >= today && item.dueDateTime <= end);
     }
 
     return items;
@@ -391,26 +413,77 @@
     const monthEnd = endOfMonth(monthDate);
     const gridStart = startOfWeek(monthStart);
     const gridEnd = endOfWeek(monthEnd);
-    const groups = groupQueueByDate(items);
+    const groups = groupCalendarByDate(items);
     const todayKey = formatDateKey(new Date());
     const days = [];
 
     for (let cursor = new Date(gridStart); cursor <= gridEnd; cursor = addDays(cursor, 1)) {
       const key = formatDateKey(cursor);
       const dayItems = groups.get(key) || [];
-      const first = dayItems[0];
+      const previewItems = dayItems.slice(0, 2);
+      const extraCount = dayItems.length - previewItems.length;
 
       days.push(`
         <button class="day-cell ${cursor.getMonth() !== monthStart.getMonth() ? "outside-month" : ""} ${key === selectedDate ? "selected" : ""} ${key === todayKey ? "today" : ""}" data-date="${key}">
           <div class="day-number">${cursor.getDate()}</div>
-          <div class="day-count">${dayItems.length ? `${dayItems.length} item(s)` : ""}</div>
-          ${first ? `<div class="event-chip">${escapeHtml(first.content)}</div>` : ""}
-          ${dayItems.length > 1 ? `<div class="event-chip">+${dayItems.length - 1} mais</div>` : ""}
+          <div class="day-count">${dayItems.length ? `${dayItems.length} ${dayItems.length === 1 ? "entrega" : "entregas"}` : ""}</div>
+          <div class="calendar-mini-list">
+            ${previewItems.map((item) => renderCalendarMiniCard(item)).join("")}
+            ${extraCount > 0 ? `<div class="calendar-more">+${extraCount} mais</div>` : ""}
+          </div>
         </button>
       `);
     }
 
     return days.join("");
+  }
+
+  function renderCalendarMiniCard(item) {
+    return `
+      <article class="calendar-mini-card ${getCalendarCategoryClass(item.categoryType)}">
+        ${item.categoryType ? `<span class="calendar-badge">${item.categoryType}</span>` : ""}
+        <div class="calendar-os">OS ${escapeHtml(item.orderNumber)}</div>
+        <div class="calendar-client">${escapeHtml(item.clientName)}</div>
+        <div class="calendar-producer">${escapeHtml(item.producer)}</div>
+      </article>
+    `;
+  }
+
+  function renderCalendarDetailCards(items, emptyMessage) {
+    if (items.length === 0) {
+      return `<p class="empty-state">${emptyMessage}</p>`;
+    }
+
+    return items
+      .map(
+        (item) => `
+          <article class="event-card calendar-detail-card ${getCalendarCategoryClass(item.categoryType)}">
+            <div class="calendar-detail-header">
+              <strong>OS ${escapeHtml(item.orderNumber)}</strong>
+              ${item.categoryType ? `<span class="calendar-badge">${item.categoryType}</span>` : ""}
+            </div>
+            <p class="detail-line"><span class="detail-label">Cliente / Solicitante:</span> <span class="calendar-client">${escapeHtml(item.clientName)}</span></p>
+            <p class="detail-line"><span class="detail-label">Produtor:</span> ${escapeHtml(item.producer)}</p>
+          </article>
+        `
+      )
+      .join("");
+  }
+
+  function getCalendarCategoryClass(categoryType) {
+    if (categoryType === "EVENTO") {
+      return "calendar-highlight calendar-highlight-evento";
+    }
+
+    if (categoryType === "FEIRA") {
+      return "calendar-highlight calendar-highlight-feira";
+    }
+
+    if (categoryType === "STAND") {
+      return "calendar-highlight calendar-highlight-stand";
+    }
+
+    return "";
   }
 
   function bindCalendarInteractions() {
@@ -440,8 +513,7 @@
       }
 
       if (!query) {
-        resultsNode.innerHTML =
-          '<p class="empty-state">Digite um número de O.S., nome do cliente ou palavra-chave.</p>';
+        resultsNode.innerHTML = '<p class="empty-state">Digite um número de O.S., nome do cliente ou palavra-chave.</p>';
         return;
       }
 
@@ -451,8 +523,7 @@
         const records = await window.DataApi.searchRecords(query);
         resultsNode.innerHTML = renderSearchResults(records);
       } catch (_error) {
-        resultsNode.innerHTML =
-          '<p class="empty-state">Não foi possível concluir a busca agora.</p>';
+        resultsNode.innerHTML = '<p class="empty-state">Não foi possível concluir a busca agora.</p>';
       }
     });
   }
@@ -465,8 +536,7 @@
     }
 
     if (!resultsNode.innerHTML.trim()) {
-      resultsNode.innerHTML =
-        '<p class="empty-state">Digite um número de O.S., nome do cliente ou palavra-chave.</p>';
+      resultsNode.innerHTML = '<p class="empty-state">Digite um número de O.S., nome do cliente ou palavra-chave.</p>';
     }
   }
 
@@ -527,20 +597,8 @@
     };
   }
 
-  function getStoriesReminder(date) {
-    return `Publicar de 3 a 6 stories hoje. Lembrete da semana: ${getWeeklyStoryAction(date.getDay())}.`;
-  }
-
-  function getWeeklyStoryAction(day) {
-    if (day <= 2) {
-      return "incluir 1 story com enquete";
-    }
-
-    if (day <= 4) {
-      return "incluir 1 story com caixa de perguntas";
-    }
-
-    return "incluir 1 story com prova social";
+  function getStoriesReminder() {
+    return "Publicar de 3 a 6 stories hoje. Na semana: 1 enquete, 1 caixa de perguntas e 1 prova social.";
   }
 
   function getNextPostReminder(date) {
@@ -573,14 +631,33 @@
     };
   }
 
+  function getOperationalQueueItems() {
+    return state.queueItems.filter((item) => !item.isPublished);
+  }
+
   function getUpcomingQueueItems() {
     const now = new Date();
-    return state.queueItems.filter((item) => !item.isPublished && item.hasDueDate && item.dueDateTime >= now);
+    return getOperationalQueueItems().filter((item) => item.hasDueDate && item.dueDateTime >= now);
+  }
+
+  function getUpcomingCalendarItems() {
+    const today = startOfDay(new Date());
+    return state.calendarItems.filter((item) => item.dateObject >= today);
   }
 
   function groupQueueByDate(items) {
     return items.reduce((map, item) => {
       const key = item.hasDueDate ? formatDateKey(item.dueDateTime) : "sem-prazo";
+      const existing = map.get(key) || [];
+      existing.push(item);
+      map.set(key, existing);
+      return map;
+    }, new Map());
+  }
+
+  function groupCalendarByDate(items) {
+    return items.reduce((map, item) => {
+      const key = item.dateKey;
       const existing = map.get(key) || [];
       existing.push(item);
       map.set(key, existing);
@@ -617,7 +694,7 @@
 
   function renderSkeletonFilters() {
     return Array.from({ length: 6 })
-      .map(() => `<span class="filter-chip skeleton-filter"></span>`)
+      .map(() => '<span class="filter-chip skeleton-filter"></span>')
       .join("");
   }
 

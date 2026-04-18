@@ -3,30 +3,6 @@
   let vendasRowsCachePromise = null;
   let mktRowsCachePromise = null;
 
-  async function loadEvents() {
-    const rows = await loadVendasRows();
-    return rows
-      .map(mapVendasRowToEvent)
-      .filter(Boolean)
-      .sort((a, b) => a.dateObject - b.dateObject);
-  }
-
-  async function searchRecords(query) {
-    const normalizedQuery = normalizeText(query).trim();
-
-    if (!normalizedQuery) {
-      return [];
-    }
-
-    const rows = await loadVendasRows();
-
-    return rows
-      .map(mapVendasRowToSearchRecord)
-      .filter(Boolean)
-      .filter((record) => matchesSearch(record, normalizedQuery))
-      .sort((a, b) => a.dateObject - b.dateObject);
-  }
-
   async function loadQueueItems() {
     const rows = await loadMktRows();
 
@@ -47,9 +23,38 @@
       });
   }
 
+  async function loadCalendarItems() {
+    const rows = await loadVendasRows();
+
+    return rows
+      .map(mapVendasRowToCalendarItem)
+      .filter(Boolean)
+      .sort((a, b) => a.dateObject - b.dateObject);
+  }
+
+  async function loadEvents() {
+    return loadCalendarItems();
+  }
+
+  async function searchRecords(query) {
+    const normalizedQuery = normalizeText(query).trim();
+
+    if (!normalizedQuery) {
+      return [];
+    }
+
+    const rows = await loadVendasRows();
+
+    return rows
+      .map(mapVendasRowToSearchRecord)
+      .filter(Boolean)
+      .filter((record) => matchesSearch(record, normalizedQuery))
+      .sort((a, b) => a.dateObject - b.dateObject);
+  }
+
   async function loadVendasRows() {
     if (!vendasRowsCachePromise) {
-      vendasRowsCachePromise = fetchCsv(config.publishedCsvUrl);
+      vendasRowsCachePromise = fetchCsv(config.vendasOsCsvUrl);
     }
 
     return vendasRowsCachePromise;
@@ -68,59 +73,89 @@
     if (!response.ok) {
       throw new Error("Não foi possível carregar a planilha.");
     }
+
     const csvText = await response.text();
     return parseCsv(csvText);
   }
 
-  function mapVendasRowToEvent(row) {
-    const orderNumber = getByColumn(row, config.columns.orderNumber);
-    const clientName = getByColumn(row, config.columns.clientName);
-    const deliveryRaw = getByColumn(row, config.columns.deliveryDate);
-    const sheetDescription = getByColumn(row, config.columns.description);
-    const segmentText = getByColumn(row, config.columns.segment);
-    const producer = getByColumn(row, config.columns.producer);
-    const notes = getByColumn(row, config.columns.notes);
-    const captureOwner = getByColumn(row, config.columns.captureOwner);
+  function mapMktRowToQueueItem(row) {
+    const postDateRaw = getByColumn(row, "A");
+    const postTimeRaw = getByColumn(row, "B");
+    const channel = getByColumn(row, "D");
+    const content = getByColumn(row, "E");
+    const responsibleEditing = getByColumn(row, "G");
+    const responsibleCapture = getByColumn(row, "H");
+    const responsiblePosting = getByColumn(row, "I");
+    const statusRaw = getByColumn(row, "J");
 
-    if (!clientName || !deliveryRaw) {
+    const contentNormalized = normalizeText(content);
+    const statusNormalized = normalizeStatus(statusRaw);
+
+    if (!content || contentNormalized === "CONTEUDO") {
+      return null;
+    }
+
+    const dueParsed = parseQueueDueDateTime(postDateRaw, postTimeRaw);
+    const dueDateTime = dueParsed ? dueParsed.dateTime : null;
+    const hasDueDate = Boolean(dueDateTime);
+    const statusLabel = formatStatusLabel(statusRaw);
+    const responsibleCurrent = deriveCurrentResponsible(
+      statusNormalized,
+      responsibleEditing,
+      responsibleCapture,
+      responsiblePosting
+    );
+
+    return {
+      content,
+      channel,
+      status: statusLabel,
+      statusNormalized,
+      dueDateTime,
+      hasDueDate,
+      dueLabel: formatQueueDueLabel(dueDateTime, dueParsed ? dueParsed.hasTime : false),
+      responsibleCurrent,
+      isPublished: statusNormalized === "PUBLICADO"
+    };
+  }
+
+  function mapVendasRowToCalendarItem(row) {
+    const orderNumber = getByColumn(row, "A");
+    const clientName = getByColumn(row, "B");
+    const deliveryRaw = getByColumn(row, "D");
+    const producer = getByColumn(row, "I");
+    const categoryRaw = getByColumn(row, "F");
+
+    if (!deliveryRaw) {
       return null;
     }
 
     const dateObject = parseDateValue(deliveryRaw);
-    if (!dateObject || dateObject < parseIsoDate(config.minDate)) {
+
+    if (!dateObject) {
       return null;
     }
 
-    const categories = config.allowedSegments.filter((segment) =>
-      normalizeText(segmentText).includes(normalizeText(segment))
-    );
-
-    if (categories.length === 0) {
+    if (!orderNumber && normalizeText(clientName) === "NOME DO CLIENTE") {
       return null;
     }
 
     return {
-      orderNumber,
-      clientName,
-      producer,
-      notes,
-      captureOwner,
-      sheetDescription,
-      categories,
+      orderNumber: orderNumber || "Sem O.S.",
+      clientName: clientName || "Sem cliente",
+      producer: producer || "Sem produtor",
       dateObject,
       dateKey: formatDateKey(dateObject),
-      title: `O.S. ${orderNumber} • ${clientName}`,
-      owner: clientName ? `Cliente: ${clientName}` : "",
-      description: sheetDescription || `Entrega prevista para ${formatShortDate(dateObject)}.`,
-      time: "Entrega"
+      categoryRaw,
+      categoryType: getHighlightCategoryType(categoryRaw)
     };
   }
 
   function mapVendasRowToSearchRecord(row) {
-    const orderNumber = getByColumn(row, config.columns.orderNumber);
-    const clientName = getByColumn(row, config.columns.clientName);
-    const deliveryRaw = getByColumn(row, config.columns.deliveryDate);
-    const sheetDescription = getByColumn(row, config.columns.description);
+    const orderNumber = getByColumn(row, "A");
+    const clientName = getByColumn(row, "B");
+    const deliveryRaw = getByColumn(row, "D");
+    const sheetDescription = getByColumn(row, "E");
 
     if (!orderNumber || !clientName || !deliveryRaw) {
       return null;
@@ -138,56 +173,26 @@
       sheetDescription,
       deliveryDate: formatShortDate(dateObject),
       dateObject,
-      title: `O.S. ${orderNumber} • ${clientName}`,
       searchText: normalizeText(`${orderNumber} ${clientName} ${sheetDescription}`)
     };
   }
 
-  function mapMktRowToQueueItem(row) {
-    const postDateRaw = getByColumn(row, "A");
-    const postTimeRaw = getByColumn(row, "B");
-    const channel = getByColumn(row, "D");
-    const content = getByColumn(row, "E");
-    const responsibleEditing = getByColumn(row, "G");
-    const responsibleCapture = getByColumn(row, "H");
-    const responsiblePosting = getByColumn(row, "I");
-    const statusRaw = getByColumn(row, "J");
-    const description = getByColumn(row, "E");
+  function getHighlightCategoryType(value) {
+    const normalized = normalizeText(value);
 
-    const contentNormalized = normalizeText(content);
-    const statusNormalized = normalizeStatus(statusRaw);
-
-    if (!content || contentNormalized === "CONTEUDO") {
-      return null;
+    if (normalized.includes("EVENTO")) {
+      return "EVENTO";
     }
 
-    const dueDateTime = parseQueueDueDateTime(postDateRaw, postTimeRaw);
-    const dueDateOnly = dueDateTime ? startOfDay(dueDateTime) : null;
-    const hasDueDate = Boolean(dueDateTime);
-    const statusLabel = formatStatusLabel(statusRaw);
-    const responsibleCurrent = deriveCurrentResponsible(
-      statusNormalized,
-      responsibleEditing,
-      responsibleCapture,
-      responsiblePosting
-    );
+    if (normalized.includes("FEIRA")) {
+      return "FEIRA";
+    }
 
-    return {
-      content,
-      description,
-      channel,
-      status: statusLabel,
-      statusNormalized,
-      dueDateTime,
-      dueDateOnly,
-      hasDueDate,
-      dueLabel: formatQueueDueLabel(dueDateTime),
-      responsibleCurrent,
-      responsibleEditing,
-      responsibleCapture,
-      responsiblePosting,
-      isPublished: statusNormalized === "PUBLICADO"
-    };
+    if (normalized.includes("STAND")) {
+      return "STAND";
+    }
+
+    return null;
   }
 
   function deriveCurrentResponsible(status, editing, capture, posting) {
@@ -214,9 +219,13 @@
     return found ? String(found).trim() : "Sem responsável";
   }
 
-  function formatQueueDueLabel(dueDateTime) {
+  function formatQueueDueLabel(dueDateTime, hasTime) {
     if (!dueDateTime) {
       return "Sem prazo";
+    }
+
+    if (!hasTime) {
+      return formatShortDate(dueDateTime);
     }
 
     return new Intl.DateTimeFormat("pt-BR", {
@@ -254,16 +263,42 @@
       return null;
     }
 
-    const timeMatch = String(timeRaw || "").trim().match(/^(\d{1,2}):(\d{2})/);
+    const time = parseTimeValue(timeRaw);
 
-    if (!timeMatch) {
-      return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+    if (!time) {
+      return {
+        dateTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0),
+        hasTime: false
+      };
     }
 
-    const hours = Number(timeMatch[1]);
-    const minutes = Number(timeMatch[2]);
+    return {
+      dateTime: new Date(date.getFullYear(), date.getMonth(), date.getDate(), time.hours, time.minutes, 0, 0),
+      hasTime: true
+    };
+  }
 
-    return new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes, 0, 0);
+  function parseTimeValue(value) {
+    const text = String(value || "").trim();
+
+    if (!text) {
+      return null;
+    }
+
+    const match = text.match(/(\d{1,2})[:hH](\d{2})/);
+
+    if (!match) {
+      return null;
+    }
+
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+
+    if (Number.isNaN(hours) || Number.isNaN(minutes) || hours > 23 || minutes > 59) {
+      return null;
+    }
+
+    return { hours, minutes };
   }
 
   function matchesSearch(record, normalizedQuery) {
@@ -341,10 +376,14 @@
       return null;
     }
 
-    const match = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    const brMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (brMatch) {
+      return new Date(Number(brMatch[3]), Number(brMatch[2]) - 1, Number(brMatch[1]));
+    }
 
-    if (match) {
-      return new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+    const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoMatch) {
+      return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
     }
 
     const parsed = new Date(text);
@@ -353,11 +392,6 @@
     }
 
     return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
-  }
-
-  function parseIsoDate(value) {
-    const [year, month, day] = value.split("-").map(Number);
-    return new Date(year, month - 1, day);
   }
 
   function formatDateKey(date) {
@@ -375,10 +409,6 @@
     }).format(date);
   }
 
-  function startOfDay(date) {
-    return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
-  }
-
   function normalizeText(value) {
     return String(value || "")
       .normalize("NFD")
@@ -388,7 +418,8 @@
 
   window.DataApi = {
     loadEvents,
-    searchRecords,
-    loadQueueItems
+    loadQueueItems,
+    loadCalendarItems,
+    searchRecords
   };
 })();
