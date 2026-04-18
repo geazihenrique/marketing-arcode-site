@@ -1,54 +1,231 @@
 (function () {
   const weekdayNames = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"];
+  const queueFilterOptions = ["Todos", "Edicao", "Producao", "Agendado", "Ideia", "Hoje", "Semana"];
+
   const state = {
-    events: [],
+    queueItems: [],
+    queueFilter: "Todos",
+    queueError: null,
     currentMonth: startOfMonth(new Date()),
-    selectedDate: formatDateKey(new Date()),
-    expandedDates: new Set()
+    selectedDate: formatDateKey(new Date())
   };
 
   document.addEventListener("DOMContentLoaded", async () => {
+    const page = document.body.dataset.page;
+    renderLoadingState(page);
+    bindSearchForm();
+
     try {
-      state.events = await window.DataApi.loadEvents();
-      setSourceStatus("Planilha Controle de O.S.");
+      state.queueItems = await window.DataApi.loadQueueItems();
+      setSourceStatus("Planilha MKT conectada");
     } catch (_error) {
+      state.queueError = "Não foi possível carregar a aba MKT agora.";
       setSourceStatus("Erro ao carregar planilha");
     }
-
-    const page = document.body.dataset.page;
-
-    bindSearchForm();
 
     if (page === "home") {
       renderHome();
     }
 
+    if (page === "queue") {
+      renderQueuePage();
+    }
+
     if (page === "calendar") {
       initCalendarPage();
-      initializeSearchPanel();
     }
 
     if (page === "agenda") {
-      renderAgendaPage();
-      initializeSearchPanel();
+      renderUpcomingPage();
     }
   });
 
+  function renderLoadingState(page) {
+    if (page === "home") {
+      setText("statOverdueCount", "...");
+      setText("statDueTodayCount", "...");
+      setText("statNoDueCount", "...");
+      fillNode("homeOverdueList", renderSkeletonCards(2));
+      fillNode("homeDueTodayList", renderSkeletonCards(2));
+      fillNode("homeScheduledList", renderSkeletonCards(2));
+      fillNode("homeIdeasNoDueList", renderSkeletonCards(2));
+    }
+
+    if (page === "queue") {
+      fillNode("queueCounters", renderSkeletonCounters());
+      fillNode("queueFilters", renderSkeletonFilters());
+      fillNode(
+        "queueGroups",
+        `<section class="panel queue-group"><div class="event-list">${renderSkeletonCards(4)}</div></section>`
+      );
+    }
+
+    if (page === "calendar") {
+      fillNode("calendarUpcomingList", renderSkeletonCards(2));
+      fillNode("selectedDayEvents", renderSkeletonCards(2));
+    }
+
+    if (page === "agenda") {
+      fillNode("agendaGroupedList", renderSkeletonCards(4));
+    }
+  }
+
+  function renderHome() {
+    renderEditorialReminders();
+    initializeSearchPanel();
+
+    const overdueNode = document.getElementById("homeOverdueList");
+    const dueTodayNode = document.getElementById("homeDueTodayList");
+    const scheduledNode = document.getElementById("homeScheduledList");
+    const ideasNode = document.getElementById("homeIdeasNoDueList");
+
+    if (!overdueNode || !dueTodayNode || !scheduledNode || !ideasNode) {
+      return;
+    }
+
+    if (state.queueError) {
+      renderErrorState(overdueNode, state.queueError);
+      renderErrorState(dueTodayNode, state.queueError);
+      renderErrorState(scheduledNode, state.queueError);
+      renderErrorState(ideasNode, state.queueError);
+      setText("statOverdueCount", "0");
+      setText("statDueTodayCount", "0");
+      setText("statNoDueCount", "0");
+      return;
+    }
+
+    const operational = state.queueItems.filter((item) => !item.isPublished);
+    const now = new Date();
+    const today = startOfDay(now);
+    const tomorrow = addDays(today, 1);
+
+    const overdue = operational.filter((item) => item.hasDueDate && item.dueDateTime < now);
+    const dueToday = operational.filter(
+      (item) => item.hasDueDate && item.dueDateTime >= today && item.dueDateTime < tomorrow
+    );
+    const scheduledNext = operational.filter(
+      (item) => item.statusNormalized === "AGENDADO" && item.hasDueDate && item.dueDateTime >= tomorrow
+    );
+    const ideasNoDue = operational.filter(
+      (item) => item.statusNormalized === "IDEIA" && !item.hasDueDate
+    );
+
+    setText("statOverdueCount", String(overdue.length));
+    setText("statDueTodayCount", String(dueToday.length));
+    setText("statNoDueCount", String(operational.filter((item) => !item.hasDueDate).length));
+
+    overdueNode.innerHTML = renderQueueCards(overdue.slice(0, 6), "Sem itens atrasados.");
+    dueTodayNode.innerHTML = renderQueueCards(dueToday.slice(0, 6), "Nenhuma entrega vence hoje.");
+    scheduledNode.innerHTML = renderQueueCards(
+      scheduledNext.slice(0, 6),
+      "Nenhum agendamento futuro no momento."
+    );
+    ideasNode.innerHTML = renderQueueCards(ideasNoDue.slice(0, 6), "Nenhuma ideia sem prazo.");
+  }
+
+  function renderQueuePage() {
+    const countersNode = document.getElementById("queueCounters");
+    const filtersNode = document.getElementById("queueFilters");
+    const groupsNode = document.getElementById("queueGroups");
+
+    if (!countersNode || !filtersNode || !groupsNode) {
+      return;
+    }
+
+    if (state.queueError) {
+      countersNode.innerHTML = "";
+      filtersNode.innerHTML = "";
+      renderErrorState(groupsNode, state.queueError);
+      return;
+    }
+
+    const now = new Date();
+    const today = startOfDay(now);
+    const operational = state.queueItems.filter((item) => !item.isPublished);
+
+    const counters = {
+      "Em edição": operational.filter((item) => item.statusNormalized === "EM EDICAO").length,
+      "Em produção": operational.filter((item) => item.statusNormalized === "EM PRODUCAO").length,
+      Agendado: operational.filter((item) => item.statusNormalized === "AGENDADO").length,
+      Ideia: operational.filter((item) => item.statusNormalized === "IDEIA").length,
+      "Sem prazo": operational.filter((item) => !item.hasDueDate).length
+    };
+
+    countersNode.innerHTML = Object.entries(counters)
+      .map(
+        ([label, value]) => `
+          <article class="queue-counter">
+            <span>${label}</span>
+            <strong>${value}</strong>
+          </article>
+        `
+      )
+      .join("");
+
+    filtersNode.innerHTML = queueFilterOptions
+      .map(
+        (option) =>
+          `<button class="filter-chip ${state.queueFilter === option ? "is-active" : ""}" data-filter="${option}">${formatFilterLabel(option)}</button>`
+      )
+      .join("");
+
+    filtersNode.querySelectorAll("[data-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        state.queueFilter = button.dataset.filter;
+        renderQueuePage();
+      });
+    });
+
+    const filtered = applyQueueFilter(operational, state.queueFilter, now, today);
+    const groups = {
+      Atrasados: filtered.filter((item) => item.hasDueDate && item.dueDateTime < now),
+      Hoje: filtered.filter(
+        (item) => item.hasDueDate && isSameDate(item.dueDateTime, today) && item.dueDateTime >= now
+      ),
+      Próximos: filtered.filter((item) => item.hasDueDate && item.dueDateTime > endOfDay(today)),
+      "Sem prazo": filtered.filter((item) => !item.hasDueDate)
+    };
+
+    groupsNode.innerHTML = Object.entries(groups)
+      .map(
+        ([title, items]) => `
+          <section class="panel queue-group">
+            <div class="section-head">
+              <h3>${title}</h3>
+              <span class="muted-text">${items.length} item(s)</span>
+            </div>
+            <div class="event-list">${renderQueueCards(items, `Nenhum item em ${title.toLowerCase()}.`)}</div>
+          </section>
+        `
+      )
+      .join("");
+  }
+
   function initCalendarPage() {
     const weekdayHeader = document.getElementById("weekdayHeader");
+    const prevMonthBtn = document.getElementById("prevMonthBtn");
+    const nextMonthBtn = document.getElementById("nextMonthBtn");
+    const todayBtn = document.getElementById("todayBtn");
+
+    initializeSearchPanel();
+
+    if (!weekdayHeader || !prevMonthBtn || !nextMonthBtn || !todayBtn) {
+      return;
+    }
+
     weekdayHeader.innerHTML = weekdayNames.map((name) => `<div class="weekday">${name}</div>`).join("");
 
-    document.getElementById("prevMonthBtn").addEventListener("click", () => {
+    prevMonthBtn.addEventListener("click", () => {
       state.currentMonth = addMonths(state.currentMonth, -1);
       renderCalendarPage();
     });
 
-    document.getElementById("nextMonthBtn").addEventListener("click", () => {
+    nextMonthBtn.addEventListener("click", () => {
       state.currentMonth = addMonths(state.currentMonth, 1);
       renderCalendarPage();
     });
 
-    document.getElementById("todayBtn").addEventListener("click", () => {
+    todayBtn.addEventListener("click", () => {
       const today = new Date();
       state.currentMonth = startOfMonth(today);
       state.selectedDate = formatDateKey(today);
@@ -58,83 +235,177 @@
     renderCalendarPage();
   }
 
-  function renderHome() {
-    document.getElementById("statMonthCount").textContent = String(getMonthEvents().length);
-    document.getElementById("statUpcomingCount").textContent = String(getUpcomingEvents().length);
-    document.getElementById("statSegments").textContent = String(getUniqueSegments().length);
-    document.getElementById("homeUpcomingList").innerHTML = renderEventCards(getUpcomingEvents().slice(0, 5), "Sem próximas entregas.");
-    document.getElementById("segmentSummaryList").innerHTML = renderSegmentSummary();
-    renderEditorialReminders();
-    initializeSearchPanel();
-  }
-
   function renderCalendarPage() {
-    document.getElementById("currentMonthLabel").textContent = formatMonthLabel(state.currentMonth);
-    document.getElementById("calendarUpcomingList").innerHTML = renderEventCards(getUpcomingEvents().slice(0, 5), "Sem próximas entregas.");
-    const mobileAgendaList = document.getElementById("mobileAgendaList");
-    if (mobileAgendaList) {
-      mobileAgendaList.innerHTML = renderGroupedMonthAgenda();
-    }
-    document.getElementById("selectedDateLabel").textContent = formatLongDateLabel(state.selectedDate);
-    document.getElementById("selectedDayEvents").innerHTML = renderEventCards(
-      state.events.filter((event) => event.dateKey === state.selectedDate),
-      "Nenhum detalhe para esta data."
-    );
-    document.getElementById("calendarGrid").innerHTML = renderCalendarGrid();
-    bindCalendarInteractions();
-  }
+    const monthLabel = document.getElementById("currentMonthLabel");
+    const upcomingNode = document.getElementById("calendarUpcomingList");
+    const gridNode = document.getElementById("calendarGrid");
+    const selectedDateLabel = document.getElementById("selectedDateLabel");
+    const selectedDayNode = document.getElementById("selectedDayEvents");
 
-  function renderAgendaPage() {
-    const groups = groupEventsByDate(getUpcomingEvents());
-    const sortedDates = Array.from(groups.keys()).sort();
-
-    if (sortedDates.length === 0) {
-      document.getElementById("agendaGroupedList").innerHTML =
-        '<p class="empty-state">Nenhuma próxima entrega encontrada.</p>';
+    if (!monthLabel || !upcomingNode || !gridNode || !selectedDateLabel || !selectedDayNode) {
       return;
     }
 
-    document.getElementById("agendaGroupedList").innerHTML = sortedDates
-      .map((dateKey) => {
-        const dayEvents = groups.get(dateKey) || [];
+    if (state.queueError) {
+      renderErrorState(upcomingNode, state.queueError);
+      renderErrorState(selectedDayNode, state.queueError);
+      gridNode.innerHTML = "";
+      return;
+    }
+
+    const operational = state.queueItems.filter((item) => !item.isPublished && item.hasDueDate);
+    monthLabel.textContent = formatMonthLabel(state.currentMonth);
+    upcomingNode.innerHTML = renderQueueCards(getUpcomingQueueItems().slice(0, 5), "Sem próximas entregas.");
+    gridNode.innerHTML = renderCalendarGrid(operational, state.currentMonth, state.selectedDate);
+    bindCalendarInteractions();
+
+    selectedDateLabel.textContent = formatLongDateLabel(state.selectedDate);
+    selectedDayNode.innerHTML = renderQueueCards(
+      operational.filter((item) => formatDateKey(item.dueDateTime) === state.selectedDate),
+      "Nenhum item para esta data."
+    );
+  }
+
+  function renderUpcomingPage() {
+    initializeSearchPanel();
+
+    const listNode = document.getElementById("agendaGroupedList");
+    if (!listNode) {
+      return;
+    }
+
+    if (state.queueError) {
+      renderErrorState(listNode, state.queueError);
+      return;
+    }
+
+    const future = getUpcomingQueueItems().filter((item) => item.hasDueDate);
+    const grouped = groupQueueByDate(future);
+    const keys = Array.from(grouped.keys()).sort();
+
+    if (keys.length === 0) {
+      listNode.innerHTML = '<p class="empty-state">Nenhuma próxima entrega encontrada.</p>';
+      return;
+    }
+
+    listNode.innerHTML = keys
+      .map((key) => {
+        const items = grouped.get(key) || [];
         return `
           <article class="agenda-group">
             <div class="section-head">
-              <h3>${escapeHtml(formatLongDateLabel(dateKey))}</h3>
-              <span class="muted-text">${dayEvents.length} entrega(s)</span>
+              <h3>${formatLongDateLabel(key)}</h3>
+              <span class="muted-text">${items.length} entrega(s)</span>
             </div>
-            ${renderEventCards(dayEvents, "")}
+            ${renderQueueCards(items, "")}
           </article>
         `;
       })
       .join("");
   }
 
-  function renderCalendarGrid() {
-    const monthStart = startOfMonth(state.currentMonth);
-    const monthEnd = endOfMonth(state.currentMonth);
+  function applyQueueFilter(items, filterName, now, today) {
+    if (filterName === "Todos") {
+      return items;
+    }
+
+    if (filterName === "Edicao") {
+      return items.filter(
+        (item) => item.statusNormalized === "EM EDICAO" || item.statusNormalized === "FILA"
+      );
+    }
+
+    if (filterName === "Producao") {
+      return items.filter((item) => item.statusNormalized === "EM PRODUCAO");
+    }
+
+    if (filterName === "Agendado") {
+      return items.filter((item) => item.statusNormalized === "AGENDADO");
+    }
+
+    if (filterName === "Ideia") {
+      return items.filter((item) => item.statusNormalized === "IDEIA");
+    }
+
+    if (filterName === "Hoje") {
+      return items.filter((item) => item.hasDueDate && isSameDate(item.dueDateTime, today));
+    }
+
+    if (filterName === "Semana") {
+      const end = endOfDay(addDays(today, 6));
+      return items.filter(
+        (item) => item.hasDueDate && item.dueDateTime >= startOfDay(today) && item.dueDateTime <= end
+      );
+    }
+
+    return items;
+  }
+
+  function formatFilterLabel(filterName) {
+    const labels = {
+      Todos: "Todos",
+      Edicao: "Edição",
+      Producao: "Produção",
+      Agendado: "Agendado",
+      Ideia: "Ideia",
+      Hoje: "Hoje",
+      Semana: "Semana"
+    };
+
+    return labels[filterName] || filterName;
+  }
+
+  function renderQueueCards(items, emptyMessage) {
+    if (items.length === 0) {
+      return `<p class="empty-state">${emptyMessage}</p>`;
+    }
+
+    return items
+      .map(
+        (item) => `
+          <article class="event-card queue-item-card">
+            <div class="queue-subline">${item.channel ? escapeHtml(item.channel) : "Canal não informado"}</div>
+            <h3>${escapeHtml(item.content)}</h3>
+            <div class="queue-item-grid">
+              <div>
+                <span class="queue-label">Prazo</span>
+                <strong>${escapeHtml(item.dueLabel)}</strong>
+              </div>
+              <div>
+                <span class="queue-label">Status</span>
+                <span class="status-chip">${escapeHtml(item.status)}</span>
+              </div>
+              <div>
+                <span class="queue-label">Responsável atual</span>
+                <strong>${escapeHtml(item.responsibleCurrent)}</strong>
+              </div>
+            </div>
+          </article>
+        `
+      )
+      .join("");
+  }
+
+  function renderCalendarGrid(items, monthDate, selectedDate) {
+    const monthStart = startOfMonth(monthDate);
+    const monthEnd = endOfMonth(monthDate);
     const gridStart = startOfWeek(monthStart);
     const gridEnd = endOfWeek(monthEnd);
+    const groups = groupQueueByDate(items);
     const todayKey = formatDateKey(new Date());
-    const eventsByDate = groupEventsByDate(state.events);
     const days = [];
 
     for (let cursor = new Date(gridStart); cursor <= gridEnd; cursor = addDays(cursor, 1)) {
-      const dateKey = formatDateKey(cursor);
-      const dayEvents = eventsByDate.get(dateKey) || [];
-      const expanded = state.expandedDates.has(dateKey);
-      const visibleEvents = expanded ? dayEvents : dayEvents.slice(0, 2);
+      const key = formatDateKey(cursor);
+      const dayItems = groups.get(key) || [];
+      const first = dayItems[0];
 
       days.push(`
-        <button class="day-cell ${cursor.getMonth() !== monthStart.getMonth() ? "outside-month" : ""} ${dateKey === todayKey ? "today" : ""} ${dateKey === state.selectedDate ? "selected" : ""}" data-date="${dateKey}">
+        <button class="day-cell ${cursor.getMonth() !== monthStart.getMonth() ? "outside-month" : ""} ${key === selectedDate ? "selected" : ""} ${key === todayKey ? "today" : ""}" data-date="${key}">
           <div class="day-number">${cursor.getDate()}</div>
-          <div class="day-count">${dayEvents.length ? `${dayEvents.length} entrega(s)` : ""}</div>
-          ${visibleEvents.map((event) => `<div class="event-chip">${escapeHtml(event.title)}</div>`).join("")}
-          ${
-            dayEvents.length > 2
-              ? `<span class="expand-btn" data-expand="${dateKey}">${expanded ? "Ver menos" : `Ver mais ${dayEvents.length - visibleEvents.length}`}</span>`
-              : ""
-          }
+          <div class="day-count">${dayItems.length ? `${dayItems.length} item(s)` : ""}</div>
+          ${first ? `<div class="event-chip">${escapeHtml(first.content)}</div>` : ""}
+          ${dayItems.length > 1 ? `<div class="event-chip">+${dayItems.length - 1} mais</div>` : ""}
         </button>
       `);
     }
@@ -149,70 +420,6 @@
         renderCalendarPage();
       });
     });
-
-    document.querySelectorAll("[data-expand]").forEach((button) => {
-      button.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const dateKey = button.dataset.expand;
-        if (state.expandedDates.has(dateKey)) {
-          state.expandedDates.delete(dateKey);
-        } else {
-          state.expandedDates.add(dateKey);
-        }
-        renderCalendarPage();
-      });
-    });
-  }
-
-  function renderGroupedMonthAgenda() {
-    const groups = groupEventsByDate(getMonthEvents());
-    const sortedDates = Array.from(groups.keys()).sort();
-
-    if (sortedDates.length === 0) {
-      return '<p class="empty-state">Nenhuma entrega neste mês.</p>';
-    }
-
-    return sortedDates
-      .map((dateKey) => `
-        <article class="mobile-day-group">
-          <div class="section-head">
-            <h3>${escapeHtml(formatLongDateLabel(dateKey))}</h3>
-            <span class="muted-text">${groups.get(dateKey).length} entrega(s)</span>
-          </div>
-          <div class="mobile-day-cards">
-            ${renderEventCards(groups.get(dateKey), "")}
-          </div>
-        </article>
-      `)
-      .join("");
-  }
-
-  function renderEventCards(events, emptyMessage) {
-    if (events.length === 0) {
-      return `<p class="empty-state">${emptyMessage}</p>`;
-    }
-
-    return events
-      .map(
-        (event) => `
-          <article class="event-card">
-            <h3>${escapeHtml(event.title)}</h3>
-            <div class="event-meta">
-              <span>${escapeHtml(formatLongDateLabel(event.dateKey))}</span>
-              ${event.categories.length ? `<span>${escapeHtml(event.categories.join(" • "))}</span>` : ""}
-            </div>
-            ${event.owner ? `<div class="status">${escapeHtml(event.owner)}</div>` : ""}
-            ${
-              event.captureOwner
-                ? `<p class="detail-line"><span class="detail-label">Captação:</span> ${escapeHtml(event.captureOwner)}</p>`
-                : ""
-            }
-            ${event.producer ? `<p class="detail-line"><span class="detail-label">Produtor:</span> ${escapeHtml(event.producer)}</p>` : ""}
-            ${event.notes ? `<p class="detail-line"><span class="detail-label">Observações:</span> ${escapeHtml(event.notes)}</p>` : ""}
-          </article>
-        `
-      )
-      .join("");
   }
 
   function bindSearchForm() {
@@ -228,20 +435,24 @@
       const query = input.value.trim();
       const resultsNode = document.getElementById("searchResults");
 
+      if (!resultsNode) {
+        return;
+      }
+
       if (!query) {
         resultsNode.innerHTML =
           '<p class="empty-state">Digite um número de O.S., nome do cliente ou palavra-chave.</p>';
         return;
       }
 
-      resultsNode.innerHTML = '<p class="empty-state">Buscando...</p>';
+      resultsNode.innerHTML = renderSkeletonCards(2);
 
       try {
         const records = await window.DataApi.searchRecords(query);
         resultsNode.innerHTML = renderSearchResults(records);
       } catch (_error) {
         resultsNode.innerHTML =
-          '<p class="empty-state">Nao foi possivel concluir a busca agora.</p>';
+          '<p class="empty-state">Não foi possível concluir a busca agora.</p>';
       }
     });
   }
@@ -280,43 +491,17 @@
       .join("");
   }
 
-  function renderSegmentSummary() {
-    const counts = new Map();
-    state.events.forEach((event) => {
-      event.categories.forEach((category) => {
-        counts.set(category, (counts.get(category) || 0) + 1);
-      });
-    });
-
-    const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
-
-    if (entries.length === 0) {
-      return '<p class="empty-state">Nenhum segmento encontrado.</p>';
-    }
-
-    return entries
-      .map(
-        ([segment, total]) => `
-          <article class="summary-row">
-            <strong>${escapeHtml(segment)}</strong>
-            <span class="muted-text">${total} entrega(s)</span>
-          </article>
-        `
-      )
-      .join("");
-  }
-
   function renderEditorialReminders() {
     const today = new Date();
     const todayReminder = getTodayReminder(today);
     const nextReminder = getNextPostReminder(today);
 
-    document.getElementById("todayReminderTitle").textContent = todayReminder.title;
-    document.getElementById("todayReminderText").textContent = todayReminder.text;
-    document.getElementById("storiesReminderTitle").textContent = "Stories de hoje";
-    document.getElementById("storiesReminderText").textContent = getStoriesReminder(today);
-    document.getElementById("nextReminderTitle").textContent = nextReminder.title;
-    document.getElementById("nextReminderText").textContent = nextReminder.text;
+    setText("todayReminderTitle", todayReminder.title);
+    setText("todayReminderText", todayReminder.text);
+    setText("storiesReminderTitle", "Stories de hoje");
+    setText("storiesReminderText", getStoriesReminder(today));
+    setText("nextReminderTitle", nextReminder.title);
+    setText("nextReminderText", nextReminder.text);
   }
 
   function getTodayReminder(date) {
@@ -338,7 +523,7 @@
 
     return {
       title: "Dia de movimentar os Stories",
-      text: "Sem post fixo no feed hoje. Priorize bastidores, rotina e aquecimento da próxima pauta."
+      text: "Sem post fixo no feed hoje. Priorize stories e preparo da próxima postagem."
     };
   }
 
@@ -388,28 +573,56 @@
     };
   }
 
-  function getMonthEvents() {
-    const month = state.currentMonth.getMonth();
-    const year = state.currentMonth.getFullYear();
-    return state.events.filter((event) => event.dateObject.getMonth() === month && event.dateObject.getFullYear() === year);
+  function getUpcomingQueueItems() {
+    const now = new Date();
+    return state.queueItems.filter((item) => !item.isPublished && item.hasDueDate && item.dueDateTime >= now);
   }
 
-  function getUpcomingEvents() {
-    const today = startOfDay(new Date());
-    return state.events.filter((event) => event.dateObject >= today).slice(0, 8);
-  }
-
-  function getUniqueSegments() {
-    return Array.from(new Set(state.events.flatMap((event) => event.categories)));
-  }
-
-  function groupEventsByDate(events) {
-    return events.reduce((map, event) => {
-      const existing = map.get(event.dateKey) || [];
-      existing.push(event);
-      map.set(event.dateKey, existing);
+  function groupQueueByDate(items) {
+    return items.reduce((map, item) => {
+      const key = item.hasDueDate ? formatDateKey(item.dueDateTime) : "sem-prazo";
+      const existing = map.get(key) || [];
+      existing.push(item);
+      map.set(key, existing);
       return map;
     }, new Map());
+  }
+
+  function renderSkeletonCards(count) {
+    return Array.from({ length: count })
+      .map(
+        () => `
+          <article class="event-card skeleton-card">
+            <div class="skeleton-line short"></div>
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line"></div>
+          </article>
+        `
+      )
+      .join("");
+  }
+
+  function renderSkeletonCounters() {
+    return Array.from({ length: 5 })
+      .map(
+        () => `
+          <article class="queue-counter skeleton-card">
+            <div class="skeleton-line short"></div>
+            <div class="skeleton-line"></div>
+          </article>
+        `
+      )
+      .join("");
+  }
+
+  function renderSkeletonFilters() {
+    return Array.from({ length: 6 })
+      .map(() => `<span class="filter-chip skeleton-filter"></span>`)
+      .join("");
+  }
+
+  function renderErrorState(node, message) {
+    node.innerHTML = `<p class="error-state">${escapeHtml(message)}</p>`;
   }
 
   function setSourceStatus(text) {
@@ -418,12 +631,29 @@
     });
   }
 
-  function formatMonthLabel(date) {
-    return new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" }).format(date);
+  function setText(id, text) {
+    const node = document.getElementById(id);
+    if (node) {
+      node.textContent = text;
+    }
   }
 
-  function formatLongDateLabel(dateKey) {
-    const date = typeof dateKey === "string" ? parseDateFromKey(dateKey) : dateKey;
+  function fillNode(id, html) {
+    const node = document.getElementById(id);
+    if (node) {
+      node.innerHTML = html;
+    }
+  }
+
+  function formatMonthLabel(date) {
+    return new Intl.DateTimeFormat("pt-BR", {
+      month: "long",
+      year: "numeric"
+    }).format(date);
+  }
+
+  function formatLongDateLabel(dateValue) {
+    const date = typeof dateValue === "string" ? parseDateFromKey(dateValue) : dateValue;
     return new Intl.DateTimeFormat("pt-BR", {
       weekday: "long",
       day: "2-digit",
@@ -461,7 +691,19 @@
   }
 
   function startOfDay(date) {
-    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+  }
+
+  function endOfDay(date) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+  }
+
+  function isSameDate(first, second) {
+    return (
+      first.getFullYear() === second.getFullYear() &&
+      first.getMonth() === second.getMonth() &&
+      first.getDate() === second.getDate()
+    );
   }
 
   function addDays(date, amount) {

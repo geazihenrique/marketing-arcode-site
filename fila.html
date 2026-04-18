@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Calendário | Marketing Arcode</title>
+    <title>Fila | Central de Operações de Marketing</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -12,46 +12,34 @@
     />
     <link rel="stylesheet" href="./assets/styles.css" />
   </head>
-  <body data-page="calendar">
+  <body data-page="queue">
     <div class="site-shell">
       <aside class="sidebar">
         <div class="brand-lockup">
           <span class="brand-pill">MARKETING Arcode</span>
           <h1>Central de Operações de Marketing</h1>
-          <p>Visão mensal do fluxo operacional para navegar por datas e janelas de entrega.</p>
+          <p>Visão operacional para edição, produção e postagem com foco no que precisa acontecer agora.</p>
         </div>
 
         <nav class="nav-links">
           <a class="nav-link" href="./index.html">Visão Geral</a>
-          <a class="nav-link" href="./fila.html">Fila</a>
-          <a class="nav-link is-active" href="./calendario.html">Calendário</a>
+          <a class="nav-link is-active" href="./fila.html">Fila</a>
+          <a class="nav-link" href="./calendario.html">Calendário</a>
           <a class="nav-link" href="./agenda.html">Próximas entregas</a>
         </nav>
 
         <section class="panel compact-panel">
           <span class="panel-label">Fonte de dados</span>
           <strong id="sourceStatus">Planilha MKT</strong>
-          <p class="muted-text">Visual mensal do cronograma de postagem.</p>
-        </section>
-
-        <section class="panel">
-          <div class="section-head">
-            <h3>Próximas entregas</h3>
-          </div>
-          <div id="calendarUpcomingList" class="event-list"></div>
+          <p class="muted-text">Atualização direta da aba de execução.</p>
         </section>
       </aside>
 
       <main class="page-content">
         <header class="page-header">
           <div>
-            <span class="eyebrow">Calendário</span>
-            <h2 id="currentMonthLabel">Mês</h2>
-          </div>
-          <div class="header-actions">
-            <button class="nav-btn" id="prevMonthBtn" aria-label="Mês anterior">←</button>
-            <button class="ghost-btn" id="todayBtn">Hoje</button>
-            <button class="nav-btn" id="nextMonthBtn" aria-label="Próximo mês">→</button>
+            <span class="eyebrow">Execução</span>
+            <h2>Fila</h2>
           </div>
         </header>
 
@@ -73,26 +61,15 @@
           <div id="searchResults" class="event-list search-results"></div>
         </section>
 
-        <section class="panel desktop-calendar-panel">
-          <div class="weekdays" id="weekdayHeader"></div>
-          <div class="calendar-grid" id="calendarGrid"></div>
+        <section class="panel">
+          <div class="queue-counters" id="queueCounters"></div>
         </section>
 
-        <section class="panel mobile-agenda-panel">
-          <div class="section-head">
-            <h3>Entregas do mês</h3>
-            <span class="muted-text">Otimizada para smartphone</span>
-          </div>
-          <div id="mobileAgendaList" class="event-list"></div>
+        <section class="panel">
+          <div class="queue-filters" id="queueFilters"></div>
         </section>
 
-        <section class="panel details-panel">
-          <div class="section-head">
-            <h3>Detalhes</h3>
-            <span id="selectedDateLabel" class="muted-text">Nenhuma data selecionada</span>
-          </div>
-          <div id="selectedDayEvents" class="event-list"></div>
-        </section>
+        <section class="queue-groups" id="queueGroups"></section>
       </main>
     </div>
 

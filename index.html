@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Marketing Arcode</title>
+    <title>Central de Operações de Marketing</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -17,12 +17,13 @@
       <aside class="sidebar">
         <div class="brand-lockup">
           <span class="brand-pill">MARKETING Arcode</span>
-          <h1>Central de Captações</h1>
-          <p>Calendário e agenda operacional com leitura automática da planilha principal.</p>
+          <h1>Central de Operações de Marketing</h1>
+          <p>Resumo executivo e prioridades do dia para orientar o time com clareza.</p>
         </div>
 
         <nav class="nav-links">
           <a class="nav-link is-active" href="./index.html">Visão Geral</a>
+          <a class="nav-link" href="./fila.html">Fila</a>
           <a class="nav-link" href="./calendario.html">Calendário</a>
           <a class="nav-link" href="./agenda.html">Próximas entregas</a>
         </nav>
@@ -64,16 +65,16 @@
 
         <section class="stats-grid">
           <article class="panel stat-card">
-            <span class="panel-label">Entregas do mês</span>
-            <strong id="statMonthCount">0</strong>
+            <span class="panel-label">Atrasados</span>
+            <strong id="statOverdueCount">0</strong>
           </article>
           <article class="panel stat-card">
-            <span class="panel-label">Próximas entregas</span>
-            <strong id="statUpcomingCount">0</strong>
+            <span class="panel-label">Vence hoje</span>
+            <strong id="statDueTodayCount">0</strong>
           </article>
           <article class="panel stat-card">
-            <span class="panel-label">Segmentos ativos</span>
-            <strong id="statSegments">0</strong>
+            <span class="panel-label">Sem prazo</span>
+            <strong id="statNoDueCount">0</strong>
           </article>
         </section>
 
@@ -98,16 +99,30 @@
         <section class="content-grid">
           <article class="panel">
             <div class="section-head">
-              <h3>Próximas entregas</h3>
+              <h3>Atrasados</h3>
             </div>
-            <div id="homeUpcomingList" class="event-list"></div>
+            <div id="homeOverdueList" class="event-list"></div>
           </article>
 
           <article class="panel">
             <div class="section-head">
-              <h3>Resumo por segmento</h3>
+              <h3>Vence hoje</h3>
             </div>
-            <div id="segmentSummaryList" class="event-list"></div>
+            <div id="homeDueTodayList" class="event-list"></div>
+          </article>
+
+          <article class="panel">
+            <div class="section-head">
+              <h3>Agendados próximos</h3>
+            </div>
+            <div id="homeScheduledList" class="event-list"></div>
+          </article>
+
+          <article class="panel">
+            <div class="section-head">
+              <h3>Ideias sem prazo</h3>
+            </div>
+            <div id="homeIdeasNoDueList" class="event-list"></div>
           </article>
         </section>
       </main>

@@ -1,11 +1,12 @@
 (function () {
   const config = window.APP_CONFIG;
-  let rowsCachePromise = null;
+  let vendasRowsCachePromise = null;
+  let mktRowsCachePromise = null;
 
   async function loadEvents() {
-    const rows = await loadRows();
+    const rows = await loadVendasRows();
     return rows
-      .map(mapRowToEvent)
+      .map(mapVendasRowToEvent)
       .filter(Boolean)
       .sort((a, b) => a.dateObject - b.dateObject);
   }
@@ -17,31 +18,61 @@
       return [];
     }
 
-    const rows = await loadRows();
+    const rows = await loadVendasRows();
 
     return rows
-      .map(mapRowToSearchRecord)
+      .map(mapVendasRowToSearchRecord)
       .filter(Boolean)
       .filter((record) => matchesSearch(record, normalizedQuery))
       .sort((a, b) => a.dateObject - b.dateObject);
   }
 
-  async function loadRows() {
-    if (!rowsCachePromise) {
-      rowsCachePromise = fetch(config.publishedCsvUrl)
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error("Nao foi possivel carregar a planilha.");
-          }
-          return response.text();
-        })
-        .then((csvText) => parseCsv(csvText));
-    }
+  async function loadQueueItems() {
+    const rows = await loadMktRows();
 
-    return rowsCachePromise;
+    return rows
+      .map(mapMktRowToQueueItem)
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (!a.dueDateTime && !b.dueDateTime) {
+          return a.content.localeCompare(b.content, "pt-BR");
+        }
+        if (!a.dueDateTime) {
+          return 1;
+        }
+        if (!b.dueDateTime) {
+          return -1;
+        }
+        return a.dueDateTime - b.dueDateTime;
+      });
   }
 
-  function mapRowToEvent(row) {
+  async function loadVendasRows() {
+    if (!vendasRowsCachePromise) {
+      vendasRowsCachePromise = fetchCsv(config.publishedCsvUrl);
+    }
+
+    return vendasRowsCachePromise;
+  }
+
+  async function loadMktRows() {
+    if (!mktRowsCachePromise) {
+      mktRowsCachePromise = fetchCsv(config.mktCsvUrl);
+    }
+
+    return mktRowsCachePromise;
+  }
+
+  async function fetchCsv(url) {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error("Não foi possível carregar a planilha.");
+    }
+    const csvText = await response.text();
+    return parseCsv(csvText);
+  }
+
+  function mapVendasRowToEvent(row) {
     const orderNumber = getByColumn(row, config.columns.orderNumber);
     const clientName = getByColumn(row, config.columns.clientName);
     const deliveryRaw = getByColumn(row, config.columns.deliveryDate);
@@ -85,7 +116,7 @@
     };
   }
 
-  function mapRowToSearchRecord(row) {
+  function mapVendasRowToSearchRecord(row) {
     const orderNumber = getByColumn(row, config.columns.orderNumber);
     const clientName = getByColumn(row, config.columns.clientName);
     const deliveryRaw = getByColumn(row, config.columns.deliveryDate);
@@ -110,6 +141,129 @@
       title: `O.S. ${orderNumber} • ${clientName}`,
       searchText: normalizeText(`${orderNumber} ${clientName} ${sheetDescription}`)
     };
+  }
+
+  function mapMktRowToQueueItem(row) {
+    const postDateRaw = getByColumn(row, "A");
+    const postTimeRaw = getByColumn(row, "B");
+    const channel = getByColumn(row, "D");
+    const content = getByColumn(row, "E");
+    const responsibleEditing = getByColumn(row, "G");
+    const responsibleCapture = getByColumn(row, "H");
+    const responsiblePosting = getByColumn(row, "I");
+    const statusRaw = getByColumn(row, "J");
+    const description = getByColumn(row, "E");
+
+    const contentNormalized = normalizeText(content);
+    const statusNormalized = normalizeStatus(statusRaw);
+
+    if (!content || contentNormalized === "CONTEUDO") {
+      return null;
+    }
+
+    const dueDateTime = parseQueueDueDateTime(postDateRaw, postTimeRaw);
+    const dueDateOnly = dueDateTime ? startOfDay(dueDateTime) : null;
+    const hasDueDate = Boolean(dueDateTime);
+    const statusLabel = formatStatusLabel(statusRaw);
+    const responsibleCurrent = deriveCurrentResponsible(
+      statusNormalized,
+      responsibleEditing,
+      responsibleCapture,
+      responsiblePosting
+    );
+
+    return {
+      content,
+      description,
+      channel,
+      status: statusLabel,
+      statusNormalized,
+      dueDateTime,
+      dueDateOnly,
+      hasDueDate,
+      dueLabel: formatQueueDueLabel(dueDateTime),
+      responsibleCurrent,
+      responsibleEditing,
+      responsibleCapture,
+      responsiblePosting,
+      isPublished: statusNormalized === "PUBLICADO"
+    };
+  }
+
+  function deriveCurrentResponsible(status, editing, capture, posting) {
+    const editingFirst = pickFirst([editing, capture, posting]);
+    const postingFirst = pickFirst([posting, editing, capture]);
+
+    if (status === "EM EDICAO" || status === "EM PRODUCAO" || status === "FILA") {
+      return editingFirst;
+    }
+
+    if (status === "AGENDADO" || status === "PUBLICADO") {
+      return postingFirst;
+    }
+
+    if (status === "IDEIA") {
+      return pickFirst([editing, capture, posting]);
+    }
+
+    return pickFirst([editing, capture, posting]);
+  }
+
+  function pickFirst(values) {
+    const found = values.find((value) => String(value || "").trim() !== "");
+    return found ? String(found).trim() : "Sem responsável";
+  }
+
+  function formatQueueDueLabel(dueDateTime) {
+    if (!dueDateTime) {
+      return "Sem prazo";
+    }
+
+    return new Intl.DateTimeFormat("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(dueDateTime);
+  }
+
+  function formatStatusLabel(statusRaw) {
+    const normalized = normalizeStatus(statusRaw);
+
+    const labels = {
+      FILA: "Fila",
+      "EM EDICAO": "Em edição",
+      "EM PRODUCAO": "Em produção",
+      AGENDADO: "Agendado",
+      IDEIA: "Ideia",
+      PUBLICADO: "Publicado"
+    };
+
+    return labels[normalized] || (statusRaw ? String(statusRaw).trim() : "Sem status");
+  }
+
+  function normalizeStatus(value) {
+    return normalizeText(value).replace(/\s+/g, " ").trim();
+  }
+
+  function parseQueueDueDateTime(dateRaw, timeRaw) {
+    const date = parseDateValue(dateRaw);
+
+    if (!date) {
+      return null;
+    }
+
+    const timeMatch = String(timeRaw || "").trim().match(/^(\d{1,2}):(\d{2})/);
+
+    if (!timeMatch) {
+      return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+    }
+
+    const hours = Number(timeMatch[1]);
+    const minutes = Number(timeMatch[2]);
+
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes, 0, 0);
   }
 
   function matchesSearch(record, normalizedQuery) {
@@ -182,6 +336,11 @@
 
   function parseDateValue(value) {
     const text = String(value || "").trim();
+
+    if (!text) {
+      return null;
+    }
+
     const match = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
 
     if (match) {
@@ -189,7 +348,11 @@
     }
 
     const parsed = new Date(text);
-    return Number.isNaN(parsed.getTime()) ? null : new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+    if (Number.isNaN(parsed.getTime())) {
+      return null;
+    }
+
+    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
   }
 
   function parseIsoDate(value) {
@@ -212,6 +375,10 @@
     }).format(date);
   }
 
+  function startOfDay(date) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+  }
+
   function normalizeText(value) {
     return String(value || "")
       .normalize("NFD")
@@ -221,6 +388,7 @@
 
   window.DataApi = {
     loadEvents,
-    searchRecords
+    searchRecords,
+    loadQueueItems
   };
 })();
